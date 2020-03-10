@@ -24,7 +24,6 @@ parts:
     plugin: dump
     build-packages:
       - python3-pip
-      - python3-all
     stage-packages:
       - python3-pip
       - python3-all
