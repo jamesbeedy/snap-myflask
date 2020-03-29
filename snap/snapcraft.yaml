@@ -20,8 +20,17 @@ apps:
 
 parts:
   myflask:
-    source: .
     plugin: dump
+    source: .
+
+    override-pull: |
+      snapcraftctl pull
+      echo "PULLSTEPCOMPLETE" > $SNAPCRAFT_PART_INSTALL/RATS_pull.txt
+
+    override-build: |
+      snapcraftctl build
+      echo "BUILDSTEPCOMPLETE" > $SNAPCRAFT_PART_BUILD/RATS_build.txt
+
     build-packages:
       - python3-pip
     stage-packages:
@@ -30,3 +39,9 @@ parts:
     override-build: |
       snapcraftctl build
       pip3 install flask
+
+  hooks:
+    plugin: dump
+    source: src/hooks/
+    organize:
+      bin/: snap/hooks/

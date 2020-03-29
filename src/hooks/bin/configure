@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+import os
+import sys
+import subprocess
+from pathlib import Path
+
+
+SNAP_MODES = [
+    "slurmdbd",
+    "slurmctld",
+    "slurmd",
+    "login",
+    "all",
+]
+
+
+def snapctl_get(snap_config_value):
+    """Get snap config from snapctl.
+    
+    Return python None is snapctl returns the empty string.
+    """
+
+    snapctl_out = subprocess.check_output(
+        ["snapctl", "get", snap_config_value]
+    ).decode().rstrip()
+
+    if snapctl_out == "":
+        snapctl_out = None
+
+    return snapctl_out
+
+
+def snapctl_set(snap_config_value):
+    subprocess.check_output(
+        ["snapctl", "set", snap_config_value]
+    )
+
+
+def run_bash(bash_string):
+    return subprocess.check_output(
+        bash_string.split()
+    ).decode().rstrip()
+
+
+def configure_munge():
+    munge_key_path = Path(f"{os.environ['SNAP_COMMON']}/etc/munge/munge.key")
+    munge_key_from_snap_config = snapctl_get("munge.key")
+    munged_process = f"{os.environ['SNAP_INSTANCE_NAME']}.munged"
+
+    # Define the events surrounding the configuration of the munge.key snap
+    # config.
+    #
+    # If the snap config for the munge.key is set AND there is an existing
+    # munge key in $SNAP_COMMON/etc/munge/munge.key, write the munge key
+    # obtained from snapctl to the path and stop/start munged.
+    # If the munge key in $SNAP_COMMON/etc/munge/munge.key and the key
+    # obtained from snapctl get are identical, return.
+    if munge_key_path.exists() and munge_key_from_snap_config is not None:
+        munge_key_from_path = munge_key_path.read_text()
+        munge_key_from_snap_config = snapctl_get("munge.key")
+        if munge_key_from_path != munge_key_from_snap_config:
+            munge_key_path.write_text(munge_key_from_snap_config)
+        else:
+            return
+    # If the munge.key is not defined as a snap config AND the
+    # $SNAP_COMMON/etc/munge/munge.key file does not exist, generate
+    # a munge key and write it to the file.
+    elif not munge_key_path.exists() and munge_key_from_snap_config is None:
+        munge_key_path.write_text(os.urandom(1024))
+    # Alas, if the munge.key is defined and the munge key file does not exist,
+    # write the snap munge.key config to the munge key file.
+    elif not munge_key_path.exists() and munge_key_from_snap_config is not None:
+        munge_key_path.write_text(munge_key_from_snap_config)
+    else:
+        return
+
+    # Restart munged
+    for event in ["stop", "start"]:
+        try:
+            run_bash(f"snapctl {event} {munged_process}")
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
+    configure_munge()
+
+    if munge_key == "slurmdbd":
+        Path(f"{os.environ['SNAP_COMMON']}/munge_key").write_text(munge_key)
+    else:
+        Path(f"{os.environ['SNAP_COMMON']}/munge_key").write_text('EMPTY_MUNGE_KEY')
+################################## GET SNAP MODE ########################################
+#snap_mode=$(snapctl get snap.mode)
+#echo ${snap_mode:-none} > $SNAP_DATA/snap_mode
+
+
+#munge_key=$(snapctl get munge.key)
+#munge_key_file=$SNAP_COMMON/etc/munge/munge.key
+#
+#if [[ ! -z $munge_key && ! -f $munge_key_file ]]; then
+#    echo "munge.key is empty"
+#    dd if=/dev/urandom bs=1 count=1024 > $munge_key_file
+#elif [[ ! -z $munge_key && -f $munge_key_file ]]; then
+#    if [[ -f $munge_key_file ]]; then
+#        chmod 0777 $munge_key_file
+#    fi
+#    echo -n "$munge_key" | sha512sum | cut -d' ' -f1 > $munge_key_file
+#fi
+#
