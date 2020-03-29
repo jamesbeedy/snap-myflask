@@ -5,15 +5,6 @@ import subprocess
 from pathlib import Path
 
 
-SNAP_MODES = [
-    "slurmdbd",
-    "slurmctld",
-    "slurmd",
-    "login",
-    "all",
-]
-
-
 def snapctl_get(snap_config_value):
     """Get snap config from snapctl.
     
@@ -57,8 +48,8 @@ def configure_munge():
     # obtained from snapctl get are identical, return.
     if munge_key_path.exists() and munge_key_from_snap_config is not None:
         munge_key_from_path = munge_key_path.read_text()
-        munge_key_from_snap_config = snapctl_get("munge.key")
-        if munge_key_from_path != munge_key_from_snap_config:
+        if munge_key_path.read_text() != munge_key_from_snap_config:
+            munge_key_path.chmod(0o700)
             munge_key_path.write_text(munge_key_from_snap_config)
         else:
             return
@@ -74,6 +65,9 @@ def configure_munge():
     else:
         return
 
+    # Set perms to 0400
+    munge_key_path.chmod(0o400)
+
     # Restart munged
     for event in ["stop", "start"]:
         try:
@@ -82,28 +76,68 @@ def configure_munge():
             pass
 
 
+def configure_snap_mode():
+    snap_mode_path = Path(f"{os.environ['SNAP_COMMON']}/snap_mode")
+    snap_mode_from_snap_config = snapctl_get("snap.mode")
+
+    supported_snap_modes = [
+        "slurmdbd",
+        "slurmctld",
+        "slurmd",
+        "login",
+        "all",
+        "none",
+    ]
+
+    snap_mode_process_map = {
+        "slurmdbd": ["slurmdbd", "mysql"],
+        "slurmctld": ["slurmctld"],
+        "slurmd": ["slurmd"],
+        "login": [],
+        "all": ["slurmdbd", "slurmctld", "slurmd", "mysql"],
+        "none": [],
+    ]
+
+    def is_snap_mode_config_supported():
+        if snap_mode_from_snap_config is not None and \
+           snap_mode_from_snap_config in supported_snap_modes:
+            return True
+        return False
+
+    if not is_snap_mode_config_supported():
+        raise Exception
+
+    if snap_mode_path.exists() and snap_mode_from_snap_config is not None:
+
+        # If the snap.mode has changed AND is different then what we have
+        # on disk:
+        #     - stop all running processes
+        #     - start only the processes which are supported by the snap.mode
+        if snap_mode_path.read_text() != snap_mode_from_snap_config:
+            # Kill them all (we may need to be more precise about which
+            # process we kill)
+            for snapped_process in snap_mode_process_map["all"]:
+                try:
+                    run_bash(f"snapctl stop {snapped_process}")
+                except Exception:
+                    pass
+
+            # Write out the new snap mode
+            snap_mode_path.write_text(snap_mode_from_snap_config)
+            # Grab processes to start
+            snapped_processes = \
+                snap_mode_process_map[snap_mode_from_snap_config]
+
+            # Start the processes used by the newly configured snap mode,
+            # throw exception if we cannot start the process.
+            for snapped_process in snapped_processes:
+                try:
+                    run_bash(f"snapctl start {snapped_process}")
+                except Exception:
+                    sys.exit(1)
+
+
+
 if __name__ == "__main__":
     configure_munge()
-
-    if munge_key == "slurmdbd":
-        Path(f"{os.environ['SNAP_COMMON']}/munge_key").write_text(munge_key)
-    else:
-        Path(f"{os.environ['SNAP_COMMON']}/munge_key").write_text('EMPTY_MUNGE_KEY')
-################################## GET SNAP MODE ########################################
-#snap_mode=$(snapctl get snap.mode)
-#echo ${snap_mode:-none} > $SNAP_DATA/snap_mode
-
-
-#munge_key=$(snapctl get munge.key)
-#munge_key_file=$SNAP_COMMON/etc/munge/munge.key
-#
-#if [[ ! -z $munge_key && ! -f $munge_key_file ]]; then
-#    echo "munge.key is empty"
-#    dd if=/dev/urandom bs=1 count=1024 > $munge_key_file
-#elif [[ ! -z $munge_key && -f $munge_key_file ]]; then
-#    if [[ -f $munge_key_file ]]; then
-#        chmod 0777 $munge_key_file
-#    fi
-#    echo -n "$munge_key" | sha512sum | cut -d' ' -f1 > $munge_key_file
-#fi
-#
+    configure_snap_mode()
