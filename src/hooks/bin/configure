@@ -80,15 +80,6 @@ def configure_snap_mode():
     snap_mode_path = Path(f"{os.environ['SNAP_COMMON']}/snap_mode")
     snap_mode_from_snap_config = snapctl_get("snap.mode")
 
-    supported_snap_modes = [
-        "slurmdbd",
-        "slurmctld",
-        "slurmd",
-        "login",
-        "all",
-        "none",
-    ]
-
     snap_mode_process_map = {
         "slurmdbd": ["slurmdbd", "mysql"],
         "slurmctld": ["slurmctld"],
@@ -100,7 +91,7 @@ def configure_snap_mode():
 
     def is_snap_mode_config_supported():
         if snap_mode_from_snap_config is not None and \
-           snap_mode_from_snap_config in supported_snap_modes:
+           snap_mode_from_snap_config in snap_mode_process_map.keys():
             return True
         return False
 
