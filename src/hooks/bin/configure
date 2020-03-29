@@ -8,7 +8,7 @@ from pathlib import Path
 def snapctl_get(snap_config_value):
     """Get snap config from snapctl.
     
-    Return python None is snapctl returns the empty string.
+    Return python None if snapctl returns the empty string.
     """
 
     snapctl_out = subprocess.check_output(
